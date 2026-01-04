@@ -84,6 +84,56 @@ fi
 
 echo "✅ Node.js $(node -v) and npm $(npm -v) are installed"
 
+# Function to install Nginx
+install_nginx() {
+    echo "📦 Neither Docker nor Nginx found. Installing Nginx..."
+    
+    # Detect OS (reuse the same detection logic)
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS=$ID
+    else
+        echo "❌ Cannot detect OS. Please install Nginx manually."
+        return 1
+    fi
+    
+    # Install Nginx based on OS
+    case $OS in
+        ubuntu|debian)
+            echo "📥 Installing Nginx on Ubuntu/Debian..."
+            sudo apt-get update
+            sudo apt-get install -y nginx
+            ;;
+        centos|rhel|fedora|rocky|almalinux)
+            echo "📥 Installing Nginx on CentOS/RHEL/Fedora..."
+            if command -v dnf &> /dev/null; then
+                sudo dnf install -y nginx
+            elif command -v yum &> /dev/null; then
+                sudo yum install -y nginx
+            fi
+            ;;
+        *)
+            echo "❌ Unsupported OS: $OS"
+            echo "Please install Nginx manually from https://nginx.org/"
+            return 1
+            ;;
+    esac
+    
+    # Verify installation
+    if ! command -v nginx &> /dev/null; then
+        echo "❌ Failed to install Nginx. Please install manually."
+        return 1
+    fi
+    
+    # Start and enable Nginx service
+    echo "🚀 Starting Nginx service..."
+    sudo systemctl start nginx || true
+    sudo systemctl enable nginx || true
+    
+    echo "✅ Nginx installed and started successfully"
+    nginx -v
+}
+
 # Check git (needed if cloning repo)
 if ! command -v git &> /dev/null; then
     echo "📦 Git not found. Installing git..."
@@ -96,6 +146,34 @@ if ! command -v git &> /dev/null; then
     else
         echo "⚠️  Git is not installed. Please install git manually."
         exit 1
+    fi
+fi
+
+# Check for Docker or Nginx (runtime requirements)
+echo "🔍 Checking runtime requirements (Docker or Nginx)..."
+HAS_DOCKER=false
+HAS_NGINX=false
+
+if command -v docker &> /dev/null; then
+    if docker ps &> /dev/null 2>&1; then
+        HAS_DOCKER=true
+        echo "✅ Docker found"
+    fi
+fi
+
+if command -v nginx &> /dev/null; then
+    HAS_NGINX=true
+    echo "✅ Nginx found"
+fi
+
+if [ "$HAS_DOCKER" = false ] && [ "$HAS_NGINX" = false ]; then
+    echo "⚠️  Neither Docker nor Nginx found."
+    echo "   Installing Nginx automatically..."
+    install_nginx
+    if [ $? -eq 0 ]; then
+        echo "✅ Nginx installed successfully - agent will use system runtime"
+    else
+        echo "⚠️  Nginx installation failed. Agent can still run, but deployment will require Docker or Nginx."
     fi
 fi
 
