@@ -75,10 +75,27 @@ class SystemDeployer {
       // Cleanup temp ZIP
       await fs.unlink(tempZipPath);
 
+      // Determine the actual root path for Nginx
+      // Check if optimized subfolder exists, if yes use it, otherwise use currentPath
+      const optimizedSubPath = path.join(currentPath, 'optimized');
+      let nginxRootPath;
+      try {
+        const stats = await fs.stat(optimizedSubPath);
+        if (stats.isDirectory()) {
+          nginxRootPath = optimizedSubPath;
+          logger.info(`Using optimized subfolder: ${nginxRootPath}`);
+        } else {
+          nginxRootPath = currentPath;
+        }
+      } catch (e) {
+        // optimized folder doesn't exist, use currentPath
+        nginxRootPath = currentPath;
+      }
+
       // Create Nginx config
       if (domain) {
         // If domain is provided, create separate config
-        const nginxConfig = this.generateNginxConfig(siteId, siteName, domain, currentPath);
+        const nginxConfig = this.generateNginxConfig(siteId, siteName, domain, nginxRootPath);
         const nginxConfigFile = path.join(NGINX_CONFIG_PATH, `sirka-${siteId}`);
         await fs.writeFile(nginxConfigFile, nginxConfig);
 
@@ -90,7 +107,7 @@ class SystemDeployer {
         await fs.symlink(nginxConfigFile, symlinkPath);
       } else {
         // If no domain, update default config to serve this site
-        const nginxConfig = this.generateNginxConfig(siteId, siteName, null, currentPath);
+        const nginxConfig = this.generateNginxConfig(siteId, siteName, null, nginxRootPath);
         const defaultConfigFile = path.join(NGINX_CONFIG_PATH, 'default');
         await fs.writeFile(defaultConfigFile, nginxConfig);
         
