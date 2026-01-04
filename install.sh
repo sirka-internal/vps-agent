@@ -6,17 +6,74 @@ set -e
 
 echo "🚀 Installing Sirka VPS Agent..."
 
+# Function to install Node.js
+install_nodejs() {
+    echo "📦 Node.js not found. Installing Node.js 18+..."
+    
+    # Detect OS
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS=$ID
+        VER=$VERSION_ID
+    else
+        echo "❌ Cannot detect OS. Please install Node.js 18+ manually."
+        exit 1
+    fi
+    
+    # Install Node.js based on OS
+    case $OS in
+        ubuntu|debian)
+            echo "📥 Installing Node.js on Ubuntu/Debian..."
+            curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+            ;;
+        centos|rhel|fedora|rocky|almalinux)
+            echo "📥 Installing Node.js on CentOS/RHEL/Fedora..."
+            if command -v dnf &> /dev/null; then
+                curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
+                sudo dnf install -y nodejs
+            elif command -v yum &> /dev/null; then
+                curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
+                sudo yum install -y nodejs
+            fi
+            ;;
+        *)
+            echo "❌ Unsupported OS: $OS"
+            echo "Please install Node.js 18+ manually from https://nodejs.org/"
+            exit 1
+            ;;
+    esac
+    
+    # Verify installation
+    if ! command -v node &> /dev/null; then
+        echo "❌ Failed to install Node.js. Please install manually."
+        exit 1
+    fi
+    
+    echo "✅ Node.js installed successfully"
+    node --version
+}
+
 # Check Node.js
 if ! command -v node &> /dev/null; then
-    echo "❌ Node.js is not installed. Please install Node.js 18+ first."
-    exit 1
+    install_nodejs
+fi
+
+# Check Node.js version
+NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
+if [ "$NODE_VERSION" -lt 18 ]; then
+    echo "⚠️  Node.js version is less than 18. Current version: $(node -v)"
+    echo "📦 Upgrading Node.js to version 18+..."
+    install_nodejs
 fi
 
 # Check npm
 if ! command -v npm &> /dev/null; then
-    echo "❌ npm is not installed. Please install npm first."
+    echo "❌ npm is not installed. This should not happen after Node.js installation."
     exit 1
 fi
+
+echo "✅ Node.js $(node -v) and npm $(npm -v) are installed"
 
 # Create directory
 INSTALL_DIR="/opt/sirka-agent"
