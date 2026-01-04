@@ -15,7 +15,7 @@ Universal VPS deployment agent for static sites. Installs on any VPS with a sing
 
 **One-command install** (recommended):
 ```bash
-curl -fsSL https://raw.githubusercontent.com/your-org/your-repo/main/vps-agent/install.sh | bash
+curl -fsSL https://github.com/sirka-internal/vps-agent/main/install.sh | bash
 # Then edit /opt/sirka-agent/.env with your AGENT_TOKEN and PLATFORM_URL
 # sudo systemctl start sirka-agent
 # sudo systemctl enable sirka-agent
@@ -87,4 +87,5 @@ The agent exposes these endpoints (protected by token):
 - Only whitelisted actions are allowed
 - No shell command execution
 - Audit log for all operations
+
 
