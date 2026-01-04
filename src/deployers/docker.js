@@ -109,9 +109,15 @@ class DockerDeployer {
         execSync(dockerCmd, { stdio: 'inherit' });
       }
 
-      const finalDomain = domain || `${siteId}.your-domain.com`;
+      // Only return domain if explicitly provided, otherwise return null
+      // The site will be accessible via server IP at the deployed path
+      const finalDomain = domain || null;
 
-      logger.info(`Site deployed: ${siteName} at ${finalDomain}`);
+      if (finalDomain) {
+        logger.info(`Site deployed: ${siteName} at ${finalDomain}`);
+      } else {
+        logger.info(`Site deployed: ${siteName} (accessible via server IP)`);
+      }
 
       return {
         domain: finalDomain,
@@ -153,7 +159,8 @@ class DockerDeployer {
   }
 
   generateNginxConfig(siteId, siteName, domain, sitePath) {
-    const serverName = domain || `${siteId}.your-domain.com`;
+    // Use domain if provided, otherwise use _ (catch-all) to serve via IP
+    const serverName = domain || '_';
     
     return `
 server {
