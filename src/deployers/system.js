@@ -76,16 +76,41 @@ class SystemDeployer {
       await fs.unlink(tempZipPath);
 
       // Create Nginx config
-      const nginxConfig = this.generateNginxConfig(siteId, siteName, domain, currentPath);
-      const nginxConfigFile = path.join(NGINX_CONFIG_PATH, `sirka-${siteId}`);
-      await fs.writeFile(nginxConfigFile, nginxConfig);
+      if (domain) {
+        // If domain is provided, create separate config
+        const nginxConfig = this.generateNginxConfig(siteId, siteName, domain, currentPath);
+        const nginxConfigFile = path.join(NGINX_CONFIG_PATH, `sirka-${siteId}`);
+        await fs.writeFile(nginxConfigFile, nginxConfig);
 
-      // Create symlink in sites-enabled
-      const symlinkPath = path.join(NGINX_SITES_ENABLED, `sirka-${siteId}`);
-      try {
-        await fs.unlink(symlinkPath);
-      } catch (e) {}
-      await fs.symlink(nginxConfigFile, symlinkPath);
+        // Create symlink in sites-enabled
+        const symlinkPath = path.join(NGINX_SITES_ENABLED, `sirka-${siteId}`);
+        try {
+          await fs.unlink(symlinkPath);
+        } catch (e) {}
+        await fs.symlink(nginxConfigFile, symlinkPath);
+      } else {
+        // If no domain, update default config to serve this site
+        const nginxConfig = this.generateNginxConfig(siteId, siteName, null, currentPath);
+        const defaultConfigFile = path.join(NGINX_CONFIG_PATH, 'default');
+        await fs.writeFile(defaultConfigFile, nginxConfig);
+        
+        // Ensure default is enabled
+        const defaultSymlink = path.join(NGINX_SITES_ENABLED, 'default');
+        try {
+          const stats = await fs.lstat(defaultSymlink);
+          if (!stats.isSymbolicLink()) {
+            // Remove if it's not a symlink
+            await fs.unlink(defaultSymlink);
+          }
+        } catch (e) {
+          // Symlink doesn't exist, create it
+          try {
+            await fs.symlink(defaultConfigFile, defaultSymlink);
+          } catch (symErr) {
+            // Symlink creation might fail, but that's ok if it already exists
+          }
+        }
+      }
 
       // Test Nginx config
       try {
@@ -146,16 +171,17 @@ class SystemDeployer {
   }
 
   generateNginxConfig(siteId, siteName, domain, sitePath) {
-    // Use domain if provided, otherwise use _ (catch-all) to serve via IP
+    // If domain is provided, use it; otherwise use default_server for catch-all
+    const listenDirective = domain ? 'listen 80;' : 'listen 80 default_server;';
     const serverName = domain || '_';
     
     return `
 server {
-    listen 80;
+    ${listenDirective}
     server_name ${serverName};
 
     root ${sitePath};
-    index index.html;
+    index index.html index.htm;
 
     location / {
         try_files $uri $uri/ /index.html;
