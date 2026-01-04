@@ -97,31 +97,94 @@ class SystemDeployer {
       logger.info(`Setting permissions for: ${sitePath}`);
       try {
         // First, ensure parent directories are accessible (chmod +x for traversal)
-        execSync(`chmod 755 ${DEPLOY_PATH}`, { stdio: 'pipe' });
+        // All parent directories need execute permission for Nginx to traverse
+        const setParentPerms = async (dirPath) => {
+          try {
+            try {
+              execSync(`sudo chmod 755 ${dirPath}`, { stdio: 'pipe' });
+            } catch (e) {
+              execSync(`chmod 755 ${dirPath}`, { stdio: 'pipe' });
+            }
+          } catch (e) {
+            // Ignore if can't set permissions
+          }
+        };
+        
+        // Set permissions for /var, /var/www, /var/www/sites, and sitePath
+        await setParentPerms('/var');
+        await setParentPerms('/var/www');
+        await setParentPerms(DEPLOY_PATH);
+        
+        // Set directory permissions first: 755 (owner: read/write/execute, group/others: read/execute)
+        try {
+          execSync(`sudo find ${sitePath} -type d -exec chmod 755 {} \\;`, { stdio: 'pipe' });
+        } catch (e) {
+          execSync(`find ${sitePath} -type d -exec chmod 755 {} \\;`, { stdio: 'pipe' });
+        }
         
         // Set file permissions: 644 (owner: read/write, group/others: read)
-        execSync(`find ${sitePath} -type f -exec chmod 644 {} \\;`, { stdio: 'pipe' });
-        // Set directory permissions: 755 (owner: read/write/execute, group/others: read/execute)
-        execSync(`find ${sitePath} -type d -exec chmod 755 {} \\;`, { stdio: 'pipe' });
+        try {
+          execSync(`sudo find ${sitePath} -type f -exec chmod 644 {} \\;`, { stdio: 'pipe' });
+        } catch (e) {
+          execSync(`find ${sitePath} -type f -exec chmod 644 {} \\;`, { stdio: 'pipe' });
+        }
         
         // Try to set owner to www-data (Nginx user on Ubuntu/Debian)
         // If www-data doesn't exist, try nginx user (used on some systems)
+        let ownerSet = false;
         try {
-          execSync(`chown -R www-data:www-data ${sitePath}`, { stdio: 'pipe' });
-          logger.info('Set owner to www-data:www-data');
+          execSync(`sudo chown -R www-data:www-data ${sitePath}`, { stdio: 'pipe' });
+          logger.info('Set owner to www-data:www-data (with sudo)');
+          ownerSet = true;
         } catch (chownError) {
           try {
-            execSync(`chown -R nginx:nginx ${sitePath}`, { stdio: 'pipe' });
-            logger.info('Set owner to nginx:nginx');
-          } catch (nginxError) {
-            logger.warn('Could not change owner (might need sudo), but permissions should still work');
+            execSync(`chown -R www-data:www-data ${sitePath}`, { stdio: 'pipe' });
+            logger.info('Set owner to www-data:www-data (without sudo)');
+            ownerSet = true;
+          } catch (chownError2) {
+            try {
+              execSync(`sudo chown -R nginx:nginx ${sitePath}`, { stdio: 'pipe' });
+              logger.info('Set owner to nginx:nginx (with sudo)');
+              ownerSet = true;
+            } catch (nginxError) {
+              try {
+                execSync(`chown -R nginx:nginx ${sitePath}`, { stdio: 'pipe' });
+                logger.info('Set owner to nginx:nginx (without sudo)');
+                ownerSet = true;
+              } catch (nginxError2) {
+                logger.warn('Could not change owner - permissions may need manual adjustment');
+              }
+            }
           }
+        }
+        
+        if (!ownerSet) {
+          logger.warn('Owner not set - you may need to manually run: sudo chown -R www-data:www-data ' + sitePath);
         }
         
         logger.info('File permissions set successfully');
       } catch (permError) {
-        logger.warn(`Failed to set permissions: ${permError.message}`);
+        logger.error(`Failed to set permissions: ${permError.message}`);
+        logger.warn('You may need to manually set permissions:');
+        logger.warn(`  sudo chmod -R 755 ${sitePath}`);
+        logger.warn(`  sudo find ${sitePath} -type f -exec chmod 644 {} \\;`);
+        logger.warn(`  sudo chown -R www-data:www-data ${sitePath}`);
         // Don't fail deployment if permissions fail, but log warning
+      }
+
+      // Verify that files exist in nginxRootPath before creating config
+      try {
+        const files = await fs.readdir(nginxRootPath);
+        logger.info(`Files in nginx root (${nginxRootPath}): ${files.slice(0, 10).join(', ')}${files.length > 10 ? '...' : ''}`);
+        const htmlFiles = files.filter(f => f.toLowerCase().endsWith('.html'));
+        if (htmlFiles.length === 0) {
+          logger.warn(`No HTML files found in ${nginxRootPath}`);
+        } else {
+          logger.info(`Found HTML files: ${htmlFiles.join(', ')}`);
+        }
+      } catch (dirError) {
+        logger.error(`Cannot read directory ${nginxRootPath}: ${dirError.message}`);
+        throw new Error(`Cannot access deployment directory: ${dirError.message}`);
       }
 
       // Create Nginx config
@@ -130,6 +193,7 @@ class SystemDeployer {
         const nginxConfig = this.generateNginxConfig(siteId, siteName, domain, nginxRootPath);
         const nginxConfigFile = path.join(NGINX_CONFIG_PATH, `sirka-${siteId}`);
         await fs.writeFile(nginxConfigFile, nginxConfig);
+        logger.info(`Created Nginx config: ${nginxConfigFile}`);
 
         // Create symlink in sites-enabled
         const symlinkPath = path.join(NGINX_SITES_ENABLED, `sirka-${siteId}`);
@@ -137,6 +201,7 @@ class SystemDeployer {
           await fs.unlink(symlinkPath);
         } catch (e) {}
         await fs.symlink(nginxConfigFile, symlinkPath);
+        logger.info(`Created symlink: ${symlinkPath} -> ${nginxConfigFile}`);
       } else {
         // If no domain, update default config to serve this site
         const nginxConfig = this.generateNginxConfig(siteId, siteName, null, nginxRootPath);
