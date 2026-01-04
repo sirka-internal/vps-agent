@@ -4,7 +4,16 @@
 
 set -e
 
+# Get token from first argument
+AGENT_TOKEN="${1:-}"
+
 echo "🚀 Installing Sirka VPS Agent..."
+
+if [ -z "$AGENT_TOKEN" ]; then
+    echo "⚠️  Warning: No token provided. You'll need to set AGENT_TOKEN in .env manually."
+    echo "   Usage: curl ... | bash -s YOUR_TOKEN"
+    echo ""
+fi
 
 # Function to install Node.js
 install_nodejs() {
@@ -136,6 +145,50 @@ npm install --production
 # Create logs directory
 mkdir -p logs
 
+# Create .env file
+ENV_FILE="$INSTALL_DIR/.env"
+if [ ! -f "$ENV_FILE" ]; then
+    echo "📝 Creating .env file..."
+    # Copy from env.example if exists
+    if [ -f "$INSTALL_DIR/env.example" ]; then
+        cp "$INSTALL_DIR/env.example" "$ENV_FILE"
+    else
+        # Create basic .env file
+        cat > "$ENV_FILE" <<EOF
+# Agent Token from platform (required)
+AGENT_TOKEN=
+
+# Agent HTTP port
+AGENT_PORT=3001
+
+# Runtime mode: auto, docker, or system
+RUNTIME=auto
+
+# Base path for deployments
+DEPLOY_PATH=/var/www/sites
+
+# Log level: error, warn, info, debug
+LOG_LEVEL=info
+EOF
+    fi
+fi
+
+# Set AGENT_TOKEN if provided
+if [ -n "$AGENT_TOKEN" ]; then
+    echo "🔑 Setting AGENT_TOKEN in .env file..."
+    # Update or add AGENT_TOKEN in .env
+    if grep -q "^AGENT_TOKEN=" "$ENV_FILE"; then
+        # Update existing line
+        sed -i.bak "s|^AGENT_TOKEN=.*|AGENT_TOKEN=$AGENT_TOKEN|" "$ENV_FILE"
+        rm -f "$ENV_FILE.bak" 2>/dev/null || true
+    else
+        # Add at the beginning
+        sed -i.bak "1s|^|AGENT_TOKEN=$AGENT_TOKEN\n|" "$ENV_FILE"
+        rm -f "$ENV_FILE.bak" 2>/dev/null || true
+    fi
+    echo "✅ AGENT_TOKEN set successfully"
+fi
+
 # Create systemd service
 echo "⚙️  Creating systemd service..."
 sudo tee /etc/systemd/system/sirka-agent.service > /dev/null <<EOF
@@ -158,11 +211,25 @@ EOF
 
 echo "✅ Installation complete!"
 echo ""
-echo "📝 Next steps:"
-echo "1. Edit $INSTALL_DIR/.env and set AGENT_TOKEN (get it from your User Cabinet)"
-echo "2. Start the service: sudo systemctl start sirka-agent"
-echo "3. Enable auto-start: sudo systemctl enable sirka-agent"
-echo "4. Check status: sudo systemctl status sirka-agent"
+
+if [ -z "$AGENT_TOKEN" ]; then
+    echo "⚠️  Token was not provided. Please edit $INSTALL_DIR/.env and set AGENT_TOKEN:"
+    echo "   sudo nano $INSTALL_DIR/.env"
+    echo ""
+    echo "📝 Next steps:"
+    echo "1. Edit $INSTALL_DIR/.env and set AGENT_TOKEN"
+    echo "2. Start the service: sudo systemctl start sirka-agent"
+    echo "3. Enable auto-start: sudo systemctl enable sirka-agent"
+    echo "4. Check status: sudo systemctl status sirka-agent"
+else
+    echo "✅ AGENT_TOKEN has been automatically configured!"
+    echo ""
+    echo "📝 Next steps:"
+    echo "1. Start the service: sudo systemctl start sirka-agent"
+    echo "2. Enable auto-start: sudo systemctl enable sirka-agent"
+    echo "3. Check status: sudo systemctl status sirka-agent"
+fi
+
 echo ""
 echo "ℹ️  Note: The agent listens on port 3001 and doesn't need PLATFORM_URL."
 echo "   The platform will connect to this agent using the IP/hostname you provided."
