@@ -37,11 +37,22 @@ app.use((err, req, res, next) => {
 async function init() {
   try {
     const runtime = await detectRuntime();
-    logger.info(`Agent initialized with runtime: ${runtime}`);
+    
+    if (runtime) {
+      logger.info(`Agent initialized with runtime: ${runtime}`);
+      // Store detected runtime in environment for controllers
+      process.env.DETECTED_RUNTIME = runtime;
+    } else {
+      logger.info('Agent initialized (runtime will be detected at deployment time)');
+    }
     
     app.listen(PORT, '0.0.0.0', () => {
       logger.info(`VPS Agent listening on port ${PORT}`);
-      logger.info(`Runtime: ${runtime}`);
+      if (runtime) {
+        logger.info(`Runtime: ${runtime}`);
+      } else {
+        logger.info('Runtime: Will be detected when deploying');
+      }
       logger.info(`Agent is ready to receive commands from platform`);
     });
   } catch (error) {
