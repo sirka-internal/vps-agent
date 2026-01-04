@@ -92,6 +92,38 @@ class SystemDeployer {
         nginxRootPath = currentPath;
       }
 
+      // Set proper permissions for Nginx to read files
+      // Nginx typically runs as www-data user (or nginx on some systems)
+      logger.info(`Setting permissions for: ${sitePath}`);
+      try {
+        // First, ensure parent directories are accessible (chmod +x for traversal)
+        execSync(`chmod 755 ${DEPLOY_PATH}`, { stdio: 'pipe' });
+        
+        // Set file permissions: 644 (owner: read/write, group/others: read)
+        execSync(`find ${sitePath} -type f -exec chmod 644 {} \\;`, { stdio: 'pipe' });
+        // Set directory permissions: 755 (owner: read/write/execute, group/others: read/execute)
+        execSync(`find ${sitePath} -type d -exec chmod 755 {} \\;`, { stdio: 'pipe' });
+        
+        // Try to set owner to www-data (Nginx user on Ubuntu/Debian)
+        // If www-data doesn't exist, try nginx user (used on some systems)
+        try {
+          execSync(`chown -R www-data:www-data ${sitePath}`, { stdio: 'pipe' });
+          logger.info('Set owner to www-data:www-data');
+        } catch (chownError) {
+          try {
+            execSync(`chown -R nginx:nginx ${sitePath}`, { stdio: 'pipe' });
+            logger.info('Set owner to nginx:nginx');
+          } catch (nginxError) {
+            logger.warn('Could not change owner (might need sudo), but permissions should still work');
+          }
+        }
+        
+        logger.info('File permissions set successfully');
+      } catch (permError) {
+        logger.warn(`Failed to set permissions: ${permError.message}`);
+        // Don't fail deployment if permissions fail, but log warning
+      }
+
       // Create Nginx config
       if (domain) {
         // If domain is provided, create separate config
