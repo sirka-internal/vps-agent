@@ -204,6 +204,24 @@ class SystemDeployer {
         logger.info(`Created symlink: ${symlinkPath} -> ${nginxConfigFile}`);
       } else {
         // If no domain, update default config to serve this site
+        // First, remove ALL conflicting default configs from sites-enabled
+        try {
+          const enabledFiles = await fs.readdir(NGINX_SITES_ENABLED);
+          for (const file of enabledFiles) {
+            if (file === 'default' || file.startsWith('sirka-')) {
+              const filePath = path.join(NGINX_SITES_ENABLED, file);
+              try {
+                await fs.unlink(filePath);
+                logger.info(`Removed conflicting config: ${filePath}`);
+              } catch (e) {
+                // Ignore if can't remove
+              }
+            }
+          }
+        } catch (e) {
+          logger.warn(`Could not clean sites-enabled: ${e.message}`);
+        }
+        
         const nginxConfig = this.generateNginxConfig(siteId, siteName, null, nginxRootPath);
         const defaultConfigFile = path.join(NGINX_CONFIG_PATH, 'default');
         
@@ -217,37 +235,23 @@ class SystemDeployer {
         // Write new default config
         await fs.writeFile(defaultConfigFile, nginxConfig);
         logger.info(`Updated default Nginx config: ${defaultConfigFile}`);
+        logger.info(`Nginx root path: ${nginxRootPath}`);
         
         // Ensure default is enabled (create symlink in sites-enabled)
         const defaultSymlink = path.join(NGINX_SITES_ENABLED, 'default');
         try {
-          const stats = await fs.lstat(defaultSymlink);
-          if (!stats.isSymbolicLink()) {
-            // Remove if it's not a symlink (it might be a regular file)
-            await fs.unlink(defaultSymlink);
-            await fs.symlink(defaultConfigFile, defaultSymlink);
-            logger.info(`Created symlink: ${defaultSymlink} -> ${defaultConfigFile}`);
-          } else {
-            // Check if symlink points to correct file
-            const realPath = await fs.readlink(defaultSymlink);
-            const realPathResolved = path.resolve(path.dirname(defaultSymlink), realPath);
-            const configPathResolved = path.resolve(defaultConfigFile);
-            if (realPathResolved !== configPathResolved) {
-              // Symlink points to wrong file, recreate it
-              await fs.unlink(defaultSymlink);
-              await fs.symlink(defaultConfigFile, defaultSymlink);
-              logger.info(`Recreated symlink: ${defaultSymlink} -> ${defaultConfigFile}`);
-            }
-          }
-        } catch (e) {
-          // Symlink doesn't exist, create it
+          // Always remove old symlink/file first
           try {
-            await fs.symlink(defaultConfigFile, defaultSymlink);
-            logger.info(`Created new symlink: ${defaultSymlink} -> ${defaultConfigFile}`);
-          } catch (symErr) {
-            logger.warn(`Failed to create symlink: ${symErr.message}`);
-            throw new Error(`Failed to create default symlink: ${symErr.message}`);
+            await fs.unlink(defaultSymlink);
+          } catch (e) {
+            // Doesn't exist, that's ok
           }
+          // Create new symlink
+          await fs.symlink(defaultConfigFile, defaultSymlink);
+          logger.info(`Created symlink: ${defaultSymlink} -> ${defaultConfigFile}`);
+        } catch (symErr) {
+          logger.error(`Failed to create symlink: ${symErr.message}`);
+          throw new Error(`Failed to create default symlink: ${symErr.message}`);
         }
       }
 
