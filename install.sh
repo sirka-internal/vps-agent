@@ -8,7 +8,7 @@ echo "🚀 Installing Sirka VPS Agent..."
 
 # Function to install Node.js
 install_nodejs() {
-    echo "📦 Node.js not found. Installing Node.js 18+..."
+    echo "📦 Node.js not found. Installing Node.js 20+..."
     
     # Detect OS
     if [ -f /etc/os-release ]; then
@@ -16,30 +16,30 @@ install_nodejs() {
         OS=$ID
         VER=$VERSION_ID
     else
-        echo "❌ Cannot detect OS. Please install Node.js 18+ manually."
+        echo "❌ Cannot detect OS. Please install Node.js 20+ manually."
         exit 1
     fi
     
     # Install Node.js based on OS
     case $OS in
         ubuntu|debian)
-            echo "📥 Installing Node.js on Ubuntu/Debian..."
-            curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+            echo "📥 Installing Node.js 20.x on Ubuntu/Debian..."
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
             sudo apt-get install -y nodejs
             ;;
         centos|rhel|fedora|rocky|almalinux)
-            echo "📥 Installing Node.js on CentOS/RHEL/Fedora..."
+            echo "📥 Installing Node.js 20.x on CentOS/RHEL/Fedora..."
             if command -v dnf &> /dev/null; then
-                curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
+                curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
                 sudo dnf install -y nodejs
             elif command -v yum &> /dev/null; then
-                curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
+                curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
                 sudo yum install -y nodejs
             fi
             ;;
         *)
             echo "❌ Unsupported OS: $OS"
-            echo "Please install Node.js 18+ manually from https://nodejs.org/"
+            echo "Please install Node.js 20+ manually from https://nodejs.org/"
             exit 1
             ;;
     esac
@@ -61,9 +61,9 @@ fi
 
 # Check Node.js version
 NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
-if [ "$NODE_VERSION" -lt 18 ]; then
-    echo "⚠️  Node.js version is less than 18. Current version: $(node -v)"
-    echo "📦 Upgrading Node.js to version 18+..."
+if [ "$NODE_VERSION" -lt 20 ]; then
+    echo "⚠️  Node.js version is less than 20. Current version: $(node -v)"
+    echo "📦 Upgrading Node.js to version 20+..."
     install_nodejs
 fi
 
