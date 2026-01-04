@@ -75,15 +75,58 @@ fi
 
 echo "✅ Node.js $(node -v) and npm $(npm -v) are installed"
 
+# Check git (needed if cloning repo)
+if ! command -v git &> /dev/null; then
+    echo "📦 Git not found. Installing git..."
+    if command -v apt-get &> /dev/null; then
+        sudo apt-get update && sudo apt-get install -y git
+    elif command -v yum &> /dev/null; then
+        sudo yum install -y git
+    elif command -v dnf &> /dev/null; then
+        sudo dnf install -y git
+    else
+        echo "⚠️  Git is not installed. Please install git manually."
+        exit 1
+    fi
+fi
+
 # Create directory
 INSTALL_DIR="/opt/sirka-agent"
 echo "📁 Creating installation directory: $INSTALL_DIR"
 sudo mkdir -p $INSTALL_DIR
 sudo chown $USER:$USER $INSTALL_DIR
 
-# Copy files
-echo "📦 Copying files..."
-cp -r * $INSTALL_DIR/
+# Determine if we're running from a cloned repo or via curl
+if [ -f "package.json" ] && [ -d "src" ]; then
+    # Running from cloned repository
+    echo "📦 Copying files from current directory..."
+    cp -r * $INSTALL_DIR/ 2>/dev/null || {
+        # If cp fails, try with explicit files
+        cp package.json $INSTALL_DIR/
+        cp -r src $INSTALL_DIR/
+        cp env.example $INSTALL_DIR/ 2>/dev/null || true
+        cp README.md $INSTALL_DIR/ 2>/dev/null || true
+    }
+else
+    # Running via curl | bash - need to clone repo
+    echo "📦 Cloning repository..."
+    TEMP_DIR=$(mktemp -d)
+    cd $TEMP_DIR
+    git clone https://github.com/sirka-internal/vps-agent.git . || {
+        echo "❌ Failed to clone repository. Please ensure git is installed and repository is accessible."
+        exit 1
+    }
+    echo "📦 Copying files..."
+    cp -r * $INSTALL_DIR/ 2>/dev/null || {
+        cp package.json $INSTALL_DIR/
+        cp -r src $INSTALL_DIR/
+        cp env.example $INSTALL_DIR/ 2>/dev/null || true
+        cp README.md $INSTALL_DIR/ 2>/dev/null || true
+    }
+    cd -
+    rm -rf $TEMP_DIR
+fi
+
 cd $INSTALL_DIR
 
 # Install dependencies
