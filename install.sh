@@ -267,48 +267,92 @@ if [ -n "$AGENT_TOKEN" ]; then
     echo "✅ AGENT_TOKEN set successfully"
 fi
 
-# Create systemd service
-echo "⚙️  Creating systemd service..."
-sudo tee /etc/systemd/system/sirka-agent.service > /dev/null <<EOF
-[Unit]
-Description=Sirka VPS Agent
-After=network.target
+# Install PM2 globally
+echo "📦 Installing PM2..."
+if ! command -v pm2 &> /dev/null; then
+    sudo npm install -g pm2
+    echo "✅ PM2 installed successfully"
+else
+    echo "✅ PM2 is already installed"
+fi
 
-[Service]
-Type=simple
-User=$USER
-WorkingDirectory=$INSTALL_DIR
-ExecStart=/usr/bin/node $INSTALL_DIR/src/index.js
-Restart=always
-RestartSec=10
-Environment=NODE_ENV=production
+# Stop existing agent if running (cleanup)
+echo "🧹 Cleaning up any existing agent instances..."
+pm2 delete sirka-agent 2>/dev/null || true
+pm2 stop sirka-agent 2>/dev/null || true
 
-[Install]
-WantedBy=multi-user.target
+# Create PM2 ecosystem file
+echo "⚙️  Creating PM2 ecosystem configuration..."
+cat > "$INSTALL_DIR/ecosystem.config.js" <<EOF
+module.exports = {
+  apps: [{
+    name: 'sirka-agent',
+    script: '$INSTALL_DIR/src/index.js',
+    cwd: '$INSTALL_DIR',
+    instances: 1,
+    autorestart: true,
+    watch: false,
+    max_memory_restart: '1G',
+    env: {
+      NODE_ENV: 'production'
+    },
+    error_file: '$INSTALL_DIR/logs/pm2-error.log',
+    out_file: '$INSTALL_DIR/logs/pm2-out.log',
+    log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+    merge_logs: true
+  }]
+};
 EOF
+
+# Start agent with PM2
+echo "🚀 Starting agent with PM2..."
+cd $INSTALL_DIR
+pm2 start ecosystem.config.js
+pm2 save
+
+# Setup PM2 startup script (auto-start on reboot)
+echo "⚙️  Setting up PM2 startup script..."
+STARTUP_CMD=$(pm2 startup | grep -o 'sudo.*' || true)
+if [ -n "$STARTUP_CMD" ]; then
+    eval $STARTUP_CMD || true
+    echo "✅ PM2 startup script configured"
+else
+    echo "⚠️  Could not automatically configure PM2 startup. Run 'pm2 startup' manually if needed."
+fi
 
 echo "✅ Installation complete!"
 echo ""
 
+# Check if agent is running
+if pm2 list | grep -q "sirka-agent.*online"; then
+    echo "✅ Agent is running with PM2!"
+    echo ""
+    echo "📊 Agent status:"
+    pm2 info sirka-agent | grep -E "(status|uptime|memory|cpu)" || true
+    echo ""
+else
+    echo "⚠️  Agent installation completed, but agent is not running."
+    echo "   Check logs: pm2 logs sirka-agent"
+    echo ""
+fi
+
 if [ -z "$AGENT_TOKEN" ]; then
     echo "⚠️  Token was not provided. Please edit $INSTALL_DIR/.env and set AGENT_TOKEN:"
     echo "   sudo nano $INSTALL_DIR/.env"
+    echo "   Then restart: pm2 restart sirka-agent"
     echo ""
-    echo "📝 Next steps:"
-    echo "1. Edit $INSTALL_DIR/.env and set AGENT_TOKEN"
-    echo "2. Start the service: sudo systemctl start sirka-agent"
-    echo "3. Enable auto-start: sudo systemctl enable sirka-agent"
-    echo "4. Check status: sudo systemctl status sirka-agent"
 else
     echo "✅ AGENT_TOKEN has been automatically configured!"
     echo ""
-    echo "📝 Next steps:"
-    echo "1. Start the service: sudo systemctl start sirka-agent"
-    echo "2. Enable auto-start: sudo systemctl enable sirka-agent"
-    echo "3. Check status: sudo systemctl status sirka-agent"
 fi
 
+echo "📝 Useful PM2 commands:"
+echo "   - Check status: pm2 status"
+echo "   - View logs: pm2 logs sirka-agent"
+echo "   - Restart: pm2 restart sirka-agent"
+echo "   - Stop: pm2 stop sirka-agent"
 echo ""
 echo "ℹ️  Note: The agent listens on port 3001 and doesn't need PLATFORM_URL."
 echo "   The platform will connect to this agent using the IP/hostname you provided."
+echo "   Agent is managed by PM2 and will auto-start on server reboot."
 
