@@ -109,35 +109,77 @@ class SystemDeployer {
         // If no domain, update default config to serve this site
         const nginxConfig = this.generateNginxConfig(siteId, siteName, null, nginxRootPath);
         const defaultConfigFile = path.join(NGINX_CONFIG_PATH, 'default');
-        await fs.writeFile(defaultConfigFile, nginxConfig);
         
-        // Ensure default is enabled
+        // Remove old default config file if it exists
+        try {
+          await fs.unlink(defaultConfigFile);
+        } catch (e) {
+          // File doesn't exist, that's ok
+        }
+        
+        // Write new default config
+        await fs.writeFile(defaultConfigFile, nginxConfig);
+        logger.info(`Updated default Nginx config: ${defaultConfigFile}`);
+        
+        // Ensure default is enabled (create symlink in sites-enabled)
         const defaultSymlink = path.join(NGINX_SITES_ENABLED, 'default');
         try {
           const stats = await fs.lstat(defaultSymlink);
           if (!stats.isSymbolicLink()) {
-            // Remove if it's not a symlink
+            // Remove if it's not a symlink (it might be a regular file)
             await fs.unlink(defaultSymlink);
+            await fs.symlink(defaultConfigFile, defaultSymlink);
+            logger.info(`Created symlink: ${defaultSymlink} -> ${defaultConfigFile}`);
+          } else {
+            // Check if symlink points to correct file
+            const realPath = await fs.readlink(defaultSymlink);
+            const realPathResolved = path.resolve(path.dirname(defaultSymlink), realPath);
+            const configPathResolved = path.resolve(defaultConfigFile);
+            if (realPathResolved !== configPathResolved) {
+              // Symlink points to wrong file, recreate it
+              await fs.unlink(defaultSymlink);
+              await fs.symlink(defaultConfigFile, defaultSymlink);
+              logger.info(`Recreated symlink: ${defaultSymlink} -> ${defaultConfigFile}`);
+            }
           }
         } catch (e) {
           // Symlink doesn't exist, create it
           try {
             await fs.symlink(defaultConfigFile, defaultSymlink);
+            logger.info(`Created new symlink: ${defaultSymlink} -> ${defaultConfigFile}`);
           } catch (symErr) {
-            // Symlink creation might fail, but that's ok if it already exists
+            logger.warn(`Failed to create symlink: ${symErr.message}`);
+            throw new Error(`Failed to create default symlink: ${symErr.message}`);
           }
         }
       }
 
       // Test Nginx config
+      logger.info('Testing Nginx configuration...');
       try {
         execSync('nginx -t', { stdio: 'inherit' });
+        logger.info('Nginx configuration test passed');
       } catch (error) {
+        logger.error('Nginx configuration test failed');
         throw new Error(`Nginx config test failed: ${error.message}`);
       }
 
-      // Reload Nginx
-      execSync('systemctl reload nginx', { stdio: 'inherit' });
+      // Reload Nginx to apply changes
+      logger.info('Reloading Nginx...');
+      try {
+        execSync('systemctl reload nginx', { stdio: 'inherit' });
+        logger.info('Nginx reloaded successfully');
+      } catch (error) {
+        logger.error(`Failed to reload Nginx: ${error.message}`);
+        // Try restart instead of reload if reload fails
+        logger.info('Attempting Nginx restart instead...');
+        try {
+          execSync('systemctl restart nginx', { stdio: 'inherit' });
+          logger.info('Nginx restarted successfully');
+        } catch (restartError) {
+          throw new Error(`Failed to reload/restart Nginx: ${restartError.message}`);
+        }
+      }
 
       // Only return domain if explicitly provided, otherwise return null
       // The site will be accessible via server IP at the deployed path
