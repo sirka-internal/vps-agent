@@ -11,7 +11,7 @@ echo "   Deployed sites will NOT be removed."
 echo ""
 
 INSTALL_DIR="/opt/sirka-agent"
-SERVICE_NAME="sirka-agent"
+PM2_APP_NAME="sirka-agent"
 
 # Check if stdin is a TTY (interactive mode)
 if [ -t 0 ]; then
@@ -21,24 +21,15 @@ else
     echo "ℹ️  Running in non-interactive mode (via pipe)"
 fi
 
-# Check if service exists
-if systemctl list-unit-files | grep -q "^${SERVICE_NAME}.service"; then
-    echo "🛑 Stopping and disabling service..."
-    sudo systemctl stop ${SERVICE_NAME} || true
-    sudo systemctl disable ${SERVICE_NAME} || true
-    echo "✅ Service stopped and disabled"
+# Stop and remove PM2 process
+if command -v pm2 &> /dev/null; then
+    echo "🛑 Stopping PM2 process..."
+    pm2 stop $PM2_APP_NAME 2>/dev/null || true
+    pm2 delete $PM2_APP_NAME 2>/dev/null || true
+    pm2 save 2>/dev/null || true
+    echo "✅ PM2 process stopped and removed"
 else
-    echo "ℹ️  Service not found (may already be removed)"
-fi
-
-# Remove systemd service file
-if [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ]; then
-    echo "🗑️  Removing systemd service file..."
-    sudo rm -f /etc/systemd/system/${SERVICE_NAME}.service
-    sudo systemctl daemon-reload
-    echo "✅ Service file removed"
-else
-    echo "ℹ️  Service file not found"
+    echo "ℹ️  PM2 not found (may not be installed)"
 fi
 
 # Remove installation directory
@@ -116,7 +107,7 @@ echo ""
 echo "✅ Uninstallation complete!"
 echo ""
 echo "📝 Summary:"
-echo "   ✓ Agent service stopped and removed"
+echo "   ✓ PM2 process stopped and removed"
 if [ -d "$INSTALL_DIR" ]; then
     echo "   ⚠️  Installation directory: $INSTALL_DIR (still exists)"
 else
@@ -129,3 +120,4 @@ echo "   - Deployed sites were NOT removed (they may still be served)"
 echo "   - If you want to remove deployed sites, do it manually"
 echo "   - Remove the agent entry from your User Cabinet on the platform"
 echo "   - If you used Nginx, you may need to remove Nginx configs manually"
+echo "   - PM2 startup script may need manual cleanup (run 'pm2 unstartup' if needed)"
