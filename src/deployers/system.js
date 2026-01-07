@@ -327,8 +327,14 @@ class SystemDeployer {
       // Test Nginx config
       logger.info('Testing Nginx configuration...');
       try {
-        execSync('nginx -t', { stdio: 'inherit' });
-        logger.info('Nginx configuration test passed');
+        try {
+          execSync('nginx -t', { stdio: 'pipe' });
+          logger.info('Nginx configuration test passed');
+        } catch (e) {
+          // Try with sudo if first attempt failed
+          execSync('sudo nginx -t', { stdio: 'inherit' });
+          logger.info('Nginx configuration test passed (with sudo)');
+        }
       } catch (error) {
         logger.error('Nginx configuration test failed');
         throw new Error(`Nginx config test failed: ${error.message}`);
@@ -337,15 +343,26 @@ class SystemDeployer {
       // Reload Nginx to apply changes
       logger.info('Reloading Nginx...');
       try {
-        execSync('systemctl reload nginx', { stdio: 'inherit' });
-        logger.info('Nginx reloaded successfully');
+        try {
+          execSync('systemctl reload nginx', { stdio: 'pipe' });
+          logger.info('Nginx reloaded successfully');
+        } catch (e) {
+          // Try with sudo if first attempt failed
+          execSync('sudo systemctl reload nginx', { stdio: 'inherit' });
+          logger.info('Nginx reloaded successfully (with sudo)');
+        }
       } catch (error) {
         logger.error(`Failed to reload Nginx: ${error.message}`);
         // Try restart instead of reload if reload fails
         logger.info('Attempting Nginx restart instead...');
         try {
-          execSync('systemctl restart nginx', { stdio: 'inherit' });
-          logger.info('Nginx restarted successfully');
+          try {
+            execSync('systemctl restart nginx', { stdio: 'pipe' });
+            logger.info('Nginx restarted successfully');
+          } catch (e) {
+            execSync('sudo systemctl restart nginx', { stdio: 'inherit' });
+            logger.info('Nginx restarted successfully (with sudo)');
+          }
         } catch (restartError) {
           throw new Error(`Failed to reload/restart Nginx: ${restartError.message}`);
         }
@@ -377,8 +394,14 @@ class SystemDeployer {
   async restart(siteId) {
     try {
       // Reload Nginx to apply changes
-      execSync('systemctl reload nginx', { stdio: 'inherit' });
-      return { success: true };
+      try {
+        execSync('systemctl reload nginx', { stdio: 'pipe' });
+        return { success: true };
+      } catch (e) {
+        // Try with sudo if first attempt failed
+        execSync('sudo systemctl reload nginx', { stdio: 'inherit' });
+        return { success: true };
+      }
     } catch (error) {
       throw new Error(`Failed to restart Nginx: ${error.message}`);
     }
