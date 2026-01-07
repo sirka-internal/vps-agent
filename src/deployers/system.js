@@ -187,11 +187,28 @@ class SystemDeployer {
       }
 
       // Verify that files exist in nginxRootPath before creating config
+      // Also detect HTML files to use as index files in Nginx config
+      let htmlIndexFiles = ['index.html', 'index.htm']; // Default fallback
       try {
         const files = await fs.readdir(nginxRootPath);
         logger.info(`Files in nginx root (${nginxRootPath}): ${files.slice(0, 10).join(', ')}${files.length > 10 ? '...' : ''}`);
         logger.info(`Total files/folders in nginx root: ${files.length}`);
-        const htmlFiles = files.filter(f => f.toLowerCase().endsWith('.html'));
+        // Filter HTML files (only files, not directories)
+        const htmlFiles = [];
+        for (const file of files) {
+          if (file.toLowerCase().endsWith('.html')) {
+            try {
+              const filePath = path.join(nginxRootPath, file);
+              const stats = await fs.stat(filePath);
+              if (stats.isFile()) {
+                htmlFiles.push(file);
+              }
+            } catch (e) {
+              // Ignore files we can't stat
+            }
+          }
+        }
+        
         if (htmlFiles.length === 0) {
           logger.warn(`No HTML files found in ${nginxRootPath}`);
           // Check if there are subdirectories that might contain HTML files
@@ -212,6 +229,24 @@ class SystemDeployer {
           }
         } else {
           logger.info(`Found HTML files: ${htmlFiles.join(', ')}`);
+          // Build index file list: prioritize index.html, then index_modified.html, then other HTML files
+          htmlIndexFiles = [];
+          const indexHtml = htmlFiles.find(f => f.toLowerCase() === 'index.html');
+          const indexModified = htmlFiles.find(f => f.toLowerCase() === 'index_modified.html');
+          const otherHtml = htmlFiles.filter(f => 
+            f.toLowerCase() !== 'index.html' && f.toLowerCase() !== 'index_modified.html'
+          );
+          
+          if (indexHtml) htmlIndexFiles.push(indexHtml);
+          if (indexModified) htmlIndexFiles.push(indexModified);
+          // Add other HTML files
+          htmlIndexFiles.push(...otherHtml);
+          // Always add index.htm as fallback
+          if (!htmlIndexFiles.includes('index.htm')) {
+            htmlIndexFiles.push('index.htm');
+          }
+          
+          logger.info(`Nginx index files will be: ${htmlIndexFiles.join(' ')}`);
         }
       } catch (dirError) {
         logger.error(`Cannot read directory ${nginxRootPath}: ${dirError.message}`);
@@ -224,7 +259,7 @@ class SystemDeployer {
       // Create Nginx config
       if (domain) {
         // If domain is provided, create separate config
-        const nginxConfig = this.generateNginxConfig(siteId, siteName, domain, nginxRootPath);
+        const nginxConfig = this.generateNginxConfig(siteId, siteName, domain, nginxRootPath, htmlIndexFiles);
         const nginxConfigFile = path.join(NGINX_CONFIG_PATH, `sirka-${siteId}`);
         await fs.writeFile(nginxConfigFile, nginxConfig);
         logger.info(`Created Nginx config: ${nginxConfigFile}`);
@@ -256,7 +291,7 @@ class SystemDeployer {
           logger.warn(`Could not clean sites-enabled: ${e.message}`);
         }
         
-        const nginxConfig = this.generateNginxConfig(siteId, siteName, null, nginxRootPath);
+        const nginxConfig = this.generateNginxConfig(siteId, siteName, null, nginxRootPath, htmlIndexFiles);
         const defaultConfigFile = path.join(NGINX_CONFIG_PATH, 'default');
         
         // Remove old default config file if it exists
@@ -364,10 +399,15 @@ class SystemDeployer {
     }
   }
 
-  generateNginxConfig(siteId, siteName, domain, sitePath) {
+  generateNginxConfig(siteId, siteName, domain, sitePath, indexFiles = ['index.html', 'index.htm']) {
     // If domain is provided, use it; otherwise use default_server for catch-all
     const listenDirective = domain ? 'listen 80;' : 'listen 80 default_server;';
     const serverName = domain || '_';
+    
+    // Build index directive with detected HTML files
+    const indexDirective = indexFiles.join(' ');
+    // Use first index file for try_files fallback
+    const tryFilesFallback = indexFiles[0] || 'index.html';
     
     return `
 server {
@@ -375,10 +415,10 @@ server {
     server_name ${serverName};
 
     root ${sitePath};
-    index index.html index.htm;
+    index ${indexDirective};
 
     location / {
-        try_files $uri $uri/ /index.html;
+        try_files $uri $uri/ /${tryFilesFallback};
     }
 
     # Security headers
