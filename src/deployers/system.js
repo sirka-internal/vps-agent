@@ -48,6 +48,14 @@ class SystemDeployer {
       zip.extractAllTo(extractPath, true);
       logger.info(`Extracted files to: ${extractPath}`);
 
+      // Log what was extracted
+      try {
+        const extractedFiles = await fs.readdir(extractPath);
+        logger.info(`Extracted files/folders: ${extractedFiles.slice(0, 20).join(', ')}${extractedFiles.length > 20 ? '...' : ''}`);
+      } catch (e) {
+        logger.warn(`Could not list extracted files: ${e.message}`);
+      }
+
       // Atomic swap: move new to current
       const currentPath = path.join(sitePath, 'current');
       const oldPath = path.join(sitePath, 'old');
@@ -66,6 +74,7 @@ class SystemDeployer {
 
       // Move new to current (atomic)
       await fs.rename(extractPath, currentPath);
+      logger.info(`Moved extracted files to: ${currentPath}`);
 
       // Remove old backup
       try {
@@ -86,11 +95,16 @@ class SystemDeployer {
           logger.info(`Using optimized subfolder: ${nginxRootPath}`);
         } else {
           nginxRootPath = currentPath;
+          logger.info(`Optimized subfolder not found, using currentPath: ${nginxRootPath}`);
         }
       } catch (e) {
         // optimized folder doesn't exist, use currentPath
         nginxRootPath = currentPath;
+        logger.info(`Optimized subfolder check failed (${e.message}), using currentPath: ${nginxRootPath}`);
       }
+      
+      // Log final nginxRootPath
+      logger.info(`Final Nginx root path will be: ${nginxRootPath}`);
 
       // Set proper permissions for Nginx to read files
       // Nginx typically runs as www-data user (or nginx on some systems)
@@ -176,14 +190,34 @@ class SystemDeployer {
       try {
         const files = await fs.readdir(nginxRootPath);
         logger.info(`Files in nginx root (${nginxRootPath}): ${files.slice(0, 10).join(', ')}${files.length > 10 ? '...' : ''}`);
+        logger.info(`Total files/folders in nginx root: ${files.length}`);
         const htmlFiles = files.filter(f => f.toLowerCase().endsWith('.html'));
         if (htmlFiles.length === 0) {
           logger.warn(`No HTML files found in ${nginxRootPath}`);
+          // Check if there are subdirectories that might contain HTML files
+          const subdirs = [];
+          for (const file of files.slice(0, 10)) {
+            try {
+              const filePath = path.join(nginxRootPath, file);
+              const stats = await fs.stat(filePath);
+              if (stats.isDirectory()) {
+                subdirs.push(file);
+              }
+            } catch (e) {
+              // Ignore
+            }
+          }
+          if (subdirs.length > 0) {
+            logger.info(`Found subdirectories: ${subdirs.join(', ')}`);
+          }
         } else {
           logger.info(`Found HTML files: ${htmlFiles.join(', ')}`);
         }
       } catch (dirError) {
         logger.error(`Cannot read directory ${nginxRootPath}: ${dirError.message}`);
+        logger.error(`Directory path: ${nginxRootPath}`);
+        logger.error(`Site path: ${sitePath}`);
+        logger.error(`Current path: ${currentPath}`);
         throw new Error(`Cannot access deployment directory: ${dirError.message}`);
       }
 
