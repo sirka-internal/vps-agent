@@ -1,0 +1,5 @@
+{"level":"warn","message":"Neither Docker nor Nginx found. Runtime will be detected at deployment time.","service":"vps-agent","timestamp":"2026-01-04T21:03:12.110Z"}
+{"level":"info","message":"Agent initialized (runtime will be detected at deployment time)","service":"vps-agent","timestamp":"2026-01-04T21:03:12.113Z"}
+{"level":"info","message":"VPS Agent listening on port 3001","service":"vps-agent","timestamp":"2026-01-04T21:03:12.130Z"}
+{"level":"info","message":"Runtime: Will be detected when deploying","service":"vps-agent","timestamp":"2026-01-04T21:03:12.130Z"}
+{"level":"info","message":"Agent is ready to receive commands from platform","service":"vps-agent","timestamp":"2026-01-04T21:03:12.131Z"}
